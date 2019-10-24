@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#3F51B5</color>
+    <color name="colorPrimaryDark">#303F9F</color>
+    <color name="colorAccent">#FF4081</color>
+
+    <color name="VeryDarkGray">#333333</color>
+    <color name="shadow">#888</color>
+    <color name="Orange">#FFA500</color>
+    <color name="Magenta">#FF00FF</color>
+    <color name="transparentGray">#80808080</color>
+    <color name="GrayMyPlaces">#EEE</color>
+    <color name="GrayMyPlacesTrans">#00EEEEEE</color>
+    <color name="GrayMyPlacesTop">#44000000</color>
+    <color name="GrayMyPlacesTopTrans">#00000000</color>
+    <color name="bgProcessessSelected">#b2dfdb</color>
+    <color name="bgSettings">#ff5252</color>
+    <color name="DarkGray">#A9A9A9</color>
+
+    <color name="process1">#FF0000</color>
+    <color name="process2">#800080</color>
+    <color name="process3">#3f51b5</color>
+    <color name="process4">#03a9f4</color>
+</resources>
