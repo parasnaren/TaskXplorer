@@ -211,9 +211,6 @@ public class ActivityProcesses extends Activity {
     }
 
 
-
-
-
     private Map<String, Object> mapDataForPlacesList(boolean selected, String pAppName, String pid, String pPackage, String pName) {
         Map<String, Object> entry = new HashMap<String, Object>();
         entry.put(C.pSelected, selected);
@@ -225,9 +222,6 @@ public class ActivityProcesses extends Activity {
     }
 
 
-
-
-
     @Override
     public void onSaveInstanceState(Bundle outState)  {
         if (mListProcesses.size() != 0)
@@ -235,9 +229,6 @@ public class ActivityProcesses extends Activity {
         if (mListSelected.size() != 0)
             outState.putSerializable(C.listSelected, (Serializable) mListSelected);
     }
-
-
-
 
 
     class SimpleAdapterCustomised extends SimpleAdapter {
