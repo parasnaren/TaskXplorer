@@ -21,4 +21,9 @@
     <color name="process2">#800080</color>
     <color name="process3">#3f51b5</color>
     <color name="process4">#03a9f4</color>
+    <color name="process5">#00bcd4</color>
+    <color name="process6">#4caf50</color>
+    <color name="process7">#cddc39</color>
+    <color name="process8">#ffc107</color>
+
 </resources>

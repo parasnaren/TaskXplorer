@@ -62,6 +62,8 @@ public class ActivityProcesses extends Activity {
         setContentView(R.layout.activity_processes);
         final Resources res = getResources();
 
+
+
         mLV = (ListView) findViewById(R.id.listView);
         mBOK = (Button) findViewById(R.id.BOK);
 
@@ -289,4 +291,5 @@ public class ActivityProcesses extends Activity {
         unregisterReceiver(receiverFinish);
     }
 }
+
 

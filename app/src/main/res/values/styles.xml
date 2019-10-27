@@ -56,4 +56,16 @@
         <item name="android:textSize">16sp</item>
     </style>
 
+    <style name="Animations" />
+
+    <style name="Animations.PopDownMenu">
+        <item name="android:windowEnterAnimation">@anim/grow_from_topright_to_bottomleft</item>
+        <item name="android:windowExitAnimation">@anim/shrink_from_bottomleft_to_topright</item>
+    </style>
+
+    <style name="Animations.PopDownMenuBottom">
+        <item name="android:windowEnterAnimation">@anim/grow_from_bottomcentre_to_topcentre</item>
+        <item name="android:windowExitAnimation">@anim/shrink_from_topcentre_to_bottomcentre</item>
+    </style>
+
 </resources>

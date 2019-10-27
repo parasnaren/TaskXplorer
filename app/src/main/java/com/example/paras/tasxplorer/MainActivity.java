@@ -1,14 +1,36 @@
 package com.example.paras.tasxplorer;
 
+import android.Manifest;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.LayoutTransition;
 import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
+import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Process;
+import android.provider.ContactsContract;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewManager;
+import android.view.ViewStub;
+import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -16,19 +38,22 @@ import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.widget.ToggleButton;
 
 import java.io.Serializable;
 import java.text.DecimalFormat;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity implements ActivityCompat.OnRequestPermissionsResultCallback {
 
     private boolean cpuTotal, cpuAM,
             memUsed, memAvailable, memFree, cached, threshold,
             settingsShown, canvasLocked, orientationChanged;
-    private int intervalRead, intervalUpdate, intervalWidth, statusBarHeight, navigationBarHeight, animDuration=200,
+    private int intervalRead, intervalUpdate, intervalWidth, statusBarHeight, navigationBarHeight, animDuration = 200,
             settingsHeight, orientation, processesMode, graphicMode;
     private float sD;
     private SharedPreferences mPrefs;
@@ -45,7 +70,7 @@ public class MainActivity extends AppCompatActivity {
     private Resources res;
     private Button mBChooseProcess, mBMemory, mBRemoveAll;
     private ToggleButton mBHide;
-//    private ViewGraphic mVG;
+    //    private ViewGraphic mVG;
     private SeekBar mSBRead;
     private PopupWindow mPWMenu;
     private ServiceReader mSR;
@@ -83,6 +108,143 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    private ServiceConnection mServiceConnection = new ServiceConnection() {
+        @SuppressLint("NewApi")
+        @Override
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            mSR = ((ServiceReader.ServiceReaderDataBinder) service).getService();
+
+//            setIconRecording();
+
+            mTVMemTotal.setText(mFormat.format(mSR.getMemTotal()) + C.kB);
+
+            switchParameter(cpuTotal, mLCPUTotal);
+            switchParameter(cpuAM, mLCPUAM);
+
+            switchParameter(memUsed, mLMemUsed);
+            switchParameter(memAvailable, mLMemAvailable);
+            switchParameter(memFree, mLMemFree);
+            switchParameter(cached, mLCached);
+            switchParameter(threshold, mLThreshold);
+
+            mHandler.removeCallbacks(drawRunnable);
+            mHandler.post(drawRunnable);
+
+            // When on ActivityProcesses the screen is rotated, ActivityMain is destroyed and back is pressed from ActivityProcesses
+            // mSR isn't ready before onActivityResult() is called. So the Intent is saved till mSR is ready.
+            if (tempIntent != null) {
+                tempIntent.putExtra(C.screenRotated, true);
+                onActivityResult(1, 1, tempIntent);
+                tempIntent = null;
+            } else onActivityResult(1, 1, null);
+
+            if (Build.VERSION.SDK_INT >= 16) {
+                mLProcessContainer.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                    @SuppressWarnings("deprecation")
+                    @Override
+                    public void onGlobalLayout() {
+                        mLProcessContainer.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                        LayoutTransition lt = new LayoutTransition();
+                        lt.enableTransitionType(LayoutTransition.APPEARING);
+                        lt.enableTransitionType(LayoutTransition.DISAPPEARING);
+                        lt.enableTransitionType(LayoutTransition.CHANGING);
+                        mLProcessContainer.setLayoutTransition(lt);
+                        LayoutTransition lt2 = new LayoutTransition();
+                        lt2.enableTransitionType(LayoutTransition.CHANGING);
+                        lt2.setStartDelay(LayoutTransition.CHANGING, 300);
+                        ((LinearLayout) mLProcessContainer.getParent()).setLayoutTransition(lt2);
+                    }
+                });
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName className) {
+            mSR = null;
+        }
+    };
+
+    private BroadcastReceiver receiverSetIconRecord = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            setIconRecording();
+        }
+    }, receiverDeadProcess = new BroadcastReceiver() {
+        @SuppressWarnings("unchecked")
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            switchParameterForProcess((Map<String, Object>) intent.getSerializableExtra(C.process));
+        }
+    }, receiverFinish = new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            finish();
+        }
+    };
+
+    @Override
+    public void onBackPressed() {
+        if (mLFeedback != null && mLFeedback.getAlpha() != 0) {
+            mPrefs.edit().putLong(C.welcomeDate, Calendar.getInstance(TimeZone.getTimeZone(C.europeLondon)).getTimeInMillis()).apply();
+            Toast.makeText(MainActivity.this, getString(R.string.w_main_feedback_no_remind), Toast.LENGTH_LONG).show();
+            mLFeedback.animate().setDuration(animDuration).setListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    ((ViewManager) mLFeedback.getParent()).removeView(mLFeedback);
+                    mLFeedback = null;
+                }
+            }).setStartDelay(0).alpha(0).translationYBy(-15*sD);
+            return;
+        }
+        if (mLWelcome != null && mLWelcome.getAlpha() != 0) {
+            mPrefs.edit().putBoolean(C.welcome, false).apply();
+            mLWelcome.animate().setDuration(animDuration).setListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    ((ViewManager) mLWelcome.getParent()).removeView(mLWelcome);
+                    mLWelcome = null;
+                }
+            }).setStartDelay(0).alpha(0).translationYBy(-15*sD);
+            return;
+        }
+
+        if (settingsShown) {
+            mCloseSettings.performClick();
+            return;
+        }
+
+        super.onBackPressed();
+    }
+
+
+
+
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode ==  KeyEvent.KEYCODE_MENU && event.getRepeatCount() == 0) {
+            mPWMenu.setAnimationStyle(R.style.Animations_PopDownMenuBottom);
+            mPWMenu.showAtLocation(mLParent, Gravity.BOTTOM | Gravity.CENTER,  0, 0);
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+
+
+
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == C.storagePermission && PackageManager.PERMISSION_DENIED == grantResults[0]) {
+            Toast.makeText(MainActivity.this, getString(R.string.w_main_storage_permission), Toast.LENGTH_LONG).show();
+        }
+    }
+
+
+
+
     private void setTextLabelCPU(TextView absolute, TextView percent, List<Float> values, @SuppressWarnings("unchecked") List<Integer>... valuesInteger) {
         if (valuesInteger.length == 1) {
             percent.setText(mFormatPercent.format(valuesInteger[0].get(0) * 100 / (float) mSR.getMemTotal()) + C.percent);
@@ -109,7 +271,8 @@ public class MainActivity extends AppCompatActivity {
                 && entry.get(C.pDead) == null)
             if (processesMode == C.processesModeShowCPU)
                 ((TextView) l.findViewById(R.id.TVpPercentage)).setText(mFormatPercent.format(((List<String>) entry.get(C.pFinalValue)).get(0)) + C.percent);
-            else ((TextView) l.findViewById(R.id.TVpPercentage)).setText(mFormatPercent.format(((List<Integer>) entry.get(C.pTPD)).get(0) * 100 / (float) mSR.getMemTotal()) + C.percent);
+            else
+                ((TextView) l.findViewById(R.id.TVpPercentage)).setText(mFormatPercent.format(((List<Integer>) entry.get(C.pTPD)).get(0) * 100 / (float) mSR.getMemTotal()) + C.percent);
     }
 
     @SuppressWarnings("unchecked")
@@ -148,10 +311,225 @@ public class MainActivity extends AppCompatActivity {
         if (draw)
             icon.setImageResource(R.drawable.icon_play);
         else icon.setImageResource(R.drawable.icon_pause);
-
-//		mHandlerVG.post(drawRunnableGraphic);
     }
 
+
+    private void setIconRecording() {
+        if (mSR == null) // This can happen when stopping and closing the app from the system bar action button.
+            return;
+        if (mSR.isRecording()) {
+            mSBRead.setEnabled(false);
+            mBChooseProcess.setEnabled(false);
+            mLButtonRecord.setImageResource(R.drawable.button_stop_record);
+        } else {
+            mSBRead.setEnabled(true);
+            mBChooseProcess.setEnabled(true);
+            mLButtonRecord.setImageResource(R.drawable.button_start_record);
+        }
+    }
+
+    private int getColourForProcess(int n) {
+        if (n==0)
+            return res.getColor(R.color.process3);
+        else if (n==1)
+            return res.getColor(R.color.process4);
+        else if (n==2)
+            return res.getColor(R.color.process5);
+        else if (n==3)
+            return res.getColor(R.color.process6);
+        else if (n==4)
+            return res.getColor(R.color.process7);
+        else if (n==5)
+            return res.getColor(R.color.process8);
+        else if (n==6)
+            return res.getColor(R.color.process1);
+        else if (n==7)
+            return res.getColor(R.color.process2);
+        n-=8;
+        return getColourForProcess(n);
+    }
+
+    @SuppressLint({ "NewApi", "InflateParams" })
+    @SuppressWarnings("unchecked")
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data)  {
+        if (requestCode == 1 && resultCode == 1) {
+            // List
+            // Map
+            // Integer	   C.pId
+            // String	   C.pName
+            // Integer	   C.work
+            // Integer	   C.workBefore
+            // List<Sring> C.finalValue
+            // Boolean	   C.pDead
+
+            // Boolean	   C.pCheckBox
+            List<Map<String, Object>> mListSelectedProv = null;
+            if (data != null) {
+                mListSelectedProv = (List<Map<String, Object>>) data.getSerializableExtra(C.listSelected);
+                if (mListSelectedProv == null)
+                    return;
+
+                // When on ActivityProcesses the screen is rotated, ActivityMain is destroyed and back is pressed from ActivityProcesses
+                // mSR isn't ready before onActivityResult() is called. So the Intent is saved till mSR is ready.
+                if (mSR == null) {
+                    tempIntent = data;
+                    return;
+                }
+
+                for(Map<String, Object> process : mListSelectedProv) {
+                    process.put(C.pColour, getColourForProcess(mSR.getProcesses() != null ? mSR.getProcesses().size() : 0));
+                    mSR.addProcess(process);
+                }
+
+                mListSelected = mSR.getProcesses();
+
+                if (data.getBooleanExtra(C.screenRotated, false))
+                    mListSelectedProv = mListSelected;
+
+            } else {
+                mListSelected = mSR.getProcesses();
+                mListSelectedProv = mListSelected;
+            }
+
+            if (mListSelectedProv == null)
+                return;
+
+            mBRemoveAll.setAlpha(1);
+            mBRemoveAll.setVisibility(View.VISIBLE);
+
+            synchronized (mListSelected) {
+                for (final Map<String, Object> process : mListSelectedProv) {
+                    if (process.get(C.pSelected) == null)
+                        process.put(C.pSelected, Boolean.TRUE);
+
+                    final LinearLayout l = (LinearLayout) getLayoutInflater().inflate(R.layout.layer_process_entry, null);
+                    l.setTag(process);
+                    l.setOnLongClickListener(new View.OnLongClickListener() {
+                        @Override
+                        public boolean onLongClick(View v) {
+                            if (!mSR.isRecording()) {
+                                mSR.removeProcess(process);
+                                mListSelected.remove(process);
+                                mLProcessContainer.removeView(l);
+                                return true;
+                            } else return false;
+                        }
+                    });
+                    l.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            Boolean b = (Boolean) process.get(C.pSelected);
+                            process.put(C.pSelected, !b);
+                            switchParameterForProcess(process);
+                        }
+                    });
+
+                    Drawable d = null;
+                    try {
+                        d = getPackageManager().getApplicationIcon((String) process.get(C.pPackage));
+                    } catch (PackageManager.NameNotFoundException e) {
+                    }
+
+                    ImageView pIcon = (ImageView) l.getChildAt(1);
+                    pIcon.setImageDrawable(d);
+
+                    int colour = (Integer) process.get(C.pColour);
+
+                    TextView pName = (TextView) l.findViewById(R.id.TVpAppName);
+                    pName.setText((String) process.get(C.pAppName));
+                    pName.setTextColor(colour);
+
+                    TextView pId = (TextView) l.findViewById(R.id.TVpName);
+                    pId.setText("Pid: " + process.get(C.pId));
+
+                    TextView pUsage = (TextView) l.findViewById(R.id.TVpPercentage);
+                    pUsage.setTextColor(colour);
+
+                    mLProcessContainer.addView(l);
+                    switchParameterForProcess(process);
+                }
+            }
+        }
+        orientationChanged = false;
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        outState.putInt(C.orientation, orientation);
+//        outState.putBoolean(C.menuShown, mPWMenu.isShowing());
+//        outState.putBoolean(C.settingsShown, settingsShown);
+//        outState.putBoolean(C.canvasLocked, canvasLocked);
+    }
+//
+    @Override
+    public void onStart() {
+        super.onStart();
+        bindService(new Intent(this, ServiceReader.class), mServiceConnection, 0);
+        registerReceiver(receiverSetIconRecord, new IntentFilter(C.actionSetIconRecord));
+        registerReceiver(receiverDeadProcess, new IntentFilter(C.actionDeadProcess));
+        registerReceiver(receiverFinish, new IntentFilter(C.actionFinishActivity));
+    }
+
+
+
+
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        mHandler.removeCallbacks(drawRunnable);
+        mHandler.post(drawRunnable);
+    }
+
+
+
+
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        if (mThread != null) {
+            mThread.interrupt();
+            mThread = null;
+        }
+        mHandler.removeCallbacks(drawRunnable);
+    }
+
+
+
+
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (mThread != null) {
+            mThread.interrupt();
+            mThread = null;
+        }
+        mHandler.removeCallbacks(drawRunnable);
+    }
+
+
+
+
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        orientationChanged = false;
+        if (mThread != null) {
+            mThread.interrupt();
+            mThread = null;
+        }
+        mHandler.removeCallbacks(drawRunnable);
+        if (mPWMenu.isShowing()) // To avoid android.view.WindowLeaked exception
+            mPWMenu.dismiss();
+        unregisterReceiver(receiverSetIconRecord);
+        unregisterReceiver(receiverDeadProcess);
+        unregisterReceiver(receiverFinish);
+        unbindService(mServiceConnection);
+    }
 
 
     @Override
@@ -254,6 +632,55 @@ public class MainActivity extends AppCompatActivity {
         });
 
 
+        mBRemoveAll = (Button) findViewById(R.id.BRemoveAll);
+        mBRemoveAll.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mListSelected.clear(); // This also updates the List on ServiceReader because it is poiting to the same object
+                mLProcessContainer.removeAllViews();
+                mBRemoveAll.animate().setDuration(300).alpha(0).setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        mBRemoveAll.setVisibility(View.GONE);
+                    }
+                });
+            }
+        });
 
+//        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, C.storagePermission);
+
+        if (savedInstanceState != null && !savedInstanceState.isEmpty()) {
+            processesMode = savedInstanceState.getInt(C.processesMode);
+            mBMemory.setText(processesMode == C.processesModeShowCPU ? getString(R.string.w_main_memory) : getString(R.string.p_cpuusage));
+
+            canvasLocked = savedInstanceState.getBoolean(C.canvasLocked);
+            settingsShown = savedInstanceState.getBoolean(C.settingsShown);
+        }
+    }
+
+    private void switchParameterForProcess(Map<String, Object> process) {
+        LinearLayout l = null;
+        for (int n=0; n<mLProcessContainer.getChildCount(); ++n) {
+            l = (LinearLayout) mLProcessContainer.getChildAt(n);
+            if (((Map<String, Object>) l.getTag()).get(C.pId).equals(process.get(C.pId)))
+                break;
+        }
+        ImageView iv = (ImageView) l.getChildAt(0);
+
+        if (process.get(C.pDead) != null) {
+            ((TextView) l.findViewById(R.id.TVpPercentage)).setText(getString(R.string.w_processes_dead));
+            l.findViewById(R.id.TVpName).setAlpha(0.2f);
+            l.findViewById(R.id.TVpAbsolute).setVisibility(View.INVISIBLE);
+            l.getChildAt(1).setAlpha(0.3f);
+        }
+
+        if ((Boolean) process.get(C.pSelected)) {
+            iv.setImageResource(R.drawable.icon_play);
+            if (process.get(C.pDead) == null)
+                setTextLabelCPUProcess(l);
+        } else {
+            iv.setImageResource(R.drawable.icon_pause);
+        }
     }
 }
+
